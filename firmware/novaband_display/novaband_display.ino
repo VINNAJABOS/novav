@@ -1,4 +1,4 @@
-// ============================================================
+s// ============================================================
 // Nova-Band — firmware for the LILYGO T-Display-S3 Touch (ESP32-S3R8)
 //
 //   display  ST7789 170x320 on the 8-bit i80 bus, esp_lcd + DMA, two frame
@@ -399,6 +399,8 @@ void loop() {
   static int frames = 0;
   static float renderMs = 0;
   static int bl = 0;
+  // worst-case stage times (us) and slow-frame count, reported with the fps line
+  static uint32_t mxIn = 0, mxSer = 0, mxUpd = 0, mxLink = 0, mxRen = 0, mxBus = 0, mxFrame = 0, slow = 0;
   uint32_t nowUs = micros();
   float dt = (nowUs - last) / 1e6f;
   last = nowUs;
@@ -415,13 +417,16 @@ void loop() {
   e = bPrev.poll();
   if (e) ui.buttonPrev(e == 2);
 
+  uint32_t tIn = micros();
   serialPoll();
   handleCommands();
   static uint32_t batT = 0;
   if (millis() - batT > 500) { batT = millis(); batteryRead(); }
 
+  uint32_t tSer = micros();
   model.update(dt, uptime());
   ui.update(dt);
+  uint32_t tUpd = micros();
   linkTick();
 
   // backlight eases in with the splash, then follows the brightness setting
@@ -435,16 +440,31 @@ void loop() {
   ui.render(canvasBot);                         // core 1 draws the bottom band
   xSemaphoreTake(doneTop, portMAX_DELAY);
   renderMs += (micros() - r0) / 1000.f;
+  uint32_t b0 = micros();
   esp_lcd_panel_draw_bitmap(panel, 0, 0, gfx::W, BAND, band[0]);
   esp_lcd_panel_draw_bitmap(panel, 0, BAND, gfx::W, gfx::H, band[1]);
+  uint32_t b1 = micros();
+  mxIn = max(mxIn, tIn - nowUs);
+  mxSer = max(mxSer, tSer - tIn);
+  mxUpd = max(mxUpd, tUpd - tSer);
+  mxLink = max(mxLink, r0 - tUpd);
+  mxRen = max(mxRen, b0 - r0);
+  mxBus = max(mxBus, b1 - b0);
 
   frames++;
   if (millis() - statT >= 5000) {
     Serial.printf("# fps %.1f  render %.1f ms  heap %u  ble %d  page %d\n", frames * 1000.f / (millis() - statT),
                   renderMs / frames, (unsigned)ESP.getFreeHeap(), bleClients, ui.page());
+    Serial.printf("# worst ms: input %.1f  serial %.1f  model+ui %.1f  link %.1f  render %.1f  bus %.1f  frame %.1f  slow(>20ms) %u\n",
+                  mxIn / 1e3f, mxSer / 1e3f, mxUpd / 1e3f, mxLink / 1e3f, mxRen / 1e3f, mxBus / 1e3f, mxFrame / 1e3f,
+                  (unsigned)slow);
+    mxIn = mxSer = mxUpd = mxLink = mxRen = mxBus = mxFrame = slow = 0;
     statT = millis(); frames = 0; renderMs = 0;
   }
   // cap at ~60 fps
   uint32_t spent = micros() - nowUs;
   if (spent < 15000) delay((16000 - spent) / 1000);       // yields to the BLE / USB tasks
+  uint32_t full = micros() - nowUs;
+  mxFrame = max(mxFrame, full);
+  if (full > 20000) slow++;
 }

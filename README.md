@@ -246,5 +246,3 @@ python tools/make-showreel2.py                                    # -> assets/no
 Ruang gym, pelari, treadmill dan properti adalah model Sketchfab berlisensi
 CC-BY (daftar lengkap: `build/sketchfab/credits.json`, juga di slide kredit
 deck). Pod purwarupa, layar firmware yang hidup, dan NovaBand adalah model kami.
-#   n o v a v  
- 

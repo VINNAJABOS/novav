@@ -252,14 +252,22 @@ void Canvas::image(const Image& im, int sx, int sy, int dx, int dy, int w, int h
 }
 
 void Canvas::imageFade(const Image& im, int dx, int dy, uint8_t a) {
+  if (a < 4) return;
+  const int x0 = dx > cx0 ? dx : cx0, x1 = dx + im.w < cx1 ? dx + im.w : cx1;   // clip once, not per pixel
+  if (x1 <= x0) return;
+  const uint32_t a5 = (a + 4) >> 3;                         // same 565 blend as blend(), alpha hoisted out of the loop
   for (int j = 0; j < im.h; j++) {
     int yy = dy + j;
     if (yy < cy0 || yy >= cy1) continue;
-    const uint16_t* s = im.px + j * im.w;
-    uint16_t* p = fb + yy * W;
-    for (int i = 0; i < im.w; i++) {
-      int xx = dx + i;
-      if (xx >= cx0 && xx < cx1) p[xx] = blend(p[xx], s[i], a);
+    const uint16_t* s = im.px + j * im.w + (x0 - dx);
+    uint16_t* p = fb + yy * W + x0;
+    const int n = x1 - x0;
+    if (a >= 252) { memcpy(p, s, n * 2); continue; }
+    for (int i = 0; i < n; i++) {
+      uint32_t sv = s[i], dv = p[i];
+      uint32_t sp = (sv | (sv << 16)) & 0x07E0F81F, dp = (dv | (dv << 16)) & 0x07E0F81F;
+      uint32_t r = ((((sp - dp) * a5) >> 5) + dp) & 0x07E0F81F;
+      p[i] = (uint16_t)(r | (r >> 16));
     }
   }
 }
